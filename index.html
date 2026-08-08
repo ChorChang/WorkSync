@@ -60,7 +60,7 @@
       <!-- 单个工作项卡片 -->
       <div v-for="item in currentList" :key="item.id" class="bg-white rounded-2xl border border-amber-200/60 shadow-sm p-5 transition-all">
         
-        <!-- 头部：折叠箭头、标题、进度条、百分比、删除 -->
+        <!-- 头部：折叠箭头、标题、截止日期、删除 -->
         <div class="flex items-center gap-3 mb-3">
           <button @click="item.isCollapsed = !item.isCollapsed" class="text-slate-400 hover:text-slate-600 text-xs">
             <i class="fa-solid" :class="item.isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'"></i>
@@ -68,7 +68,30 @@
           
           <h2 class="text-base font-bold text-slate-800 flex-1">{{ item.title }}</h2>
 
-          <button @click="deleteWorkItem(item.id)" class="text-slate-300 hover:text-rose-500 text-sm transition-colors" title="删除工作项">
+          <!-- 截止日期展示与选择区 -->
+          <div class="flex items-center gap-2">
+            <!-- 截止日期 Tag / 提醒 -->
+            <div v-if="item.deadline" 
+                 :class="[
+                   'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-all',
+                   isOverdue(item) 
+                    ? 'bg-rose-50 text-rose-600 border-rose-200 font-semibold' 
+                    : 'bg-slate-50 text-slate-500 border-slate-200'
+                 ]">
+              <i class="fa-regular fa-calendar text-[11px]"></i>
+              <span>{{ item.deadline }}</span>
+              <span v-if="isOverdue(item)" class="bg-rose-500 text-white text-[10px] px-1 rounded font-normal">已逾期</span>
+            </div>
+
+            <!-- 隐蔽的日期选择器触发器 -->
+            <label class="cursor-pointer text-slate-300 hover:text-amber-500 text-xs p-1" title="设置/修改截止日期">
+              <i class="fa-solid fa-calendar-day"></i>
+              <input type="date" v-model="item.deadline" class="sr-only">
+            </label>
+          </div>
+
+          <!-- 删除工作项按钮 -->
+          <button @click="deleteWorkItem(item.id)" class="text-slate-300 hover:text-rose-500 text-sm transition-colors ml-1" title="删除工作项">
             <i class="fa-regular fa-trash-can"></i>
           </button>
         </div>
@@ -94,17 +117,14 @@
                ]">
             
             <div class="flex items-center gap-3 flex-1">
-              <!-- 核心：三段式点击按钮 (未开始 -> 进行中 -> 已完成 -> 未开始) -->
+              <!-- 三段式点击按钮 (未开始 -> 进行中 -> 已完成 -> 未开始) -->
               <button @click="toggleSubtaskStatus(item, sub)" class="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 transition-transform active:scale-95">
-                <!-- 已完成: 绿底白勾 -->
                 <div v-if="sub.status === 'done'" class="w-5 h-5 rounded-full bg-emerald-500 text-white flex items-center justify-center text-[10px]">
                   <i class="fa-solid fa-check"></i>
                 </div>
-                <!-- 进行中: 橙底白横杠 -->
                 <div v-else-if="sub.status === 'doing'" class="w-5 h-5 rounded-full bg-amber-500 text-white flex items-center justify-center text-[10px]">
                   <i class="fa-solid fa-minus"></i>
                 </div>
-                <!-- 未开始: 灰圈 -->
                 <div v-else class="w-5 h-5 rounded-full border-2 border-slate-300 hover:border-slate-400"></div>
               </button>
 
@@ -114,7 +134,6 @@
 
             <!-- 右侧：权重与编辑/删除操作 -->
             <div class="flex items-center gap-3">
-              <!-- 权重百分比显示/修改 -->
               <div class="flex items-center text-xs text-slate-400 font-mono">
                 <input type="number" v-model.number="sub.weight" @input="onSubtaskChange(item)" min="0" max="100" class="w-8 bg-transparent text-right focus:outline-none focus:text-amber-600">
                 <span>%</span>
@@ -156,7 +175,7 @@
 
   </main>
 
-  <!-- 新建工作项弹窗 -->
+  <!-- 新建工作项弹窗（增加选择截止日期字段） -->
   <div v-if="showModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4">
       <div class="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -167,7 +186,11 @@
       <div class="space-y-3 text-sm">
         <div>
           <label class="block text-slate-500 text-xs font-semibold mb-1">工作项名称</label>
-          <input type="text" v-model="newItem.title" placeholder="例如：test" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:border-amber-500">
+          <input type="text" v-model="newItem.title" placeholder="例如：架构升级" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:border-amber-500">
+        </div>
+        <div>
+          <label class="block text-slate-500 text-xs font-semibold mb-1">设定截止日期（可选）</label>
+          <input type="date" v-model="newItem.deadline" class="w-full border border-slate-200 rounded-xl px-3 py-2 text-slate-700 focus:outline-none focus:border-amber-500">
         </div>
       </div>
 
@@ -187,18 +210,18 @@
         const showModal = ref(false);
         const projects = ref([]);
 
-        const newItem = ref({ title: '' });
+        const newItem = ref({ title: '', deadline: '' });
 
         onMounted(() => {
           const saved = localStorage.getItem('worksync_data');
           if (saved) {
             try { projects.value = JSON.parse(saved); } catch (e) { projects.value = []; }
           } else {
-            // 初始化参考图的数据
             projects.value = [
               {
                 id: Date.now(),
                 title: 'test',
+                deadline: '',
                 status: 'in_progress',
                 isCollapsed: false,
                 newSubtaskTitle: '',
@@ -218,7 +241,7 @@
           localStorage.setItem('worksync_data', JSON.stringify(newVal));
         }, { deep: true });
 
-        // 切换子任务状态：todo -> doing -> done -> todo
+        // 三段式状态切换：todo -> doing -> done -> todo
         const toggleSubtaskStatus = (item, sub) => {
           if (sub.status === 'todo') {
             sub.status = 'doing';
@@ -230,7 +253,6 @@
           onSubtaskChange(item);
         };
 
-        // 计算总进度（done 算 100% 权重，doing 算 50% 权重）
         const calculateProgress = (item) => {
           if (!item.subtasks || item.subtasks.length === 0) return 0;
           
@@ -239,7 +261,7 @@
 
           let currentWeight = item.subtasks.reduce((acc, sub) => {
             if (sub.status === 'done') return acc + (Number(sub.weight) || 0);
-            if (sub.status === 'doing') return acc + ((Number(sub.weight) || 0) * 0.5); // 进行中算一半进度
+            if (sub.status === 'doing') return acc + ((Number(sub.weight) || 0) * 0.5);
             return acc;
           }, 0);
 
@@ -285,12 +307,20 @@
           autoBalanceWeights(item);
         };
 
+        // 判定是否过期
+        const isOverdue = (item) => {
+          if (!item.deadline || item.status === 'done') return false;
+          const today = new Date().setHours(0, 0, 0, 0);
+          const deadlineDate = new Date(item.deadline).setHours(0, 0, 0, 0);
+          return deadlineDate < today;
+        };
+
         const activeProjects = computed(() => projects.value.filter(p => p.status !== 'done'));
         const completedProjects = computed(() => projects.value.filter(p => p.status === 'done'));
         const currentList = computed(() => activeTab.value === 'active' ? activeProjects.value : completedProjects.value);
 
         const openCreateModal = () => {
-          newItem.value = { title: '' };
+          newItem.value = { title: '', deadline: '' };
           showModal.value = true;
         };
 
@@ -299,6 +329,7 @@
           projects.value.unshift({
             id: Date.now(),
             title: newItem.value.title.trim(),
+            deadline: newItem.value.deadline,
             status: 'in_progress',
             isCollapsed: false,
             newSubtaskTitle: '',
@@ -327,7 +358,8 @@
           calculateProgress,
           onSubtaskChange,
           addNewSubtask,
-          removeSubtask
+          removeSubtask,
+          isOverdue
         };
       }
     }).mount('#app');
