@@ -16,6 +16,12 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: #fcfcfc;
     }
+    /* 优化日期输入框样式 */
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      cursor: pointer;
+      opacity: 0.6;
+      filter: hover(brightness(0.8));
+    }
   </style>
 </head>
 <body class="text-slate-800 min-h-screen pb-12" id="app" v-cloak>
@@ -60,7 +66,7 @@
       <!-- 单个工作项卡片 -->
       <div v-for="item in currentList" :key="item.id" class="bg-white rounded-2xl border border-amber-200/60 shadow-sm p-5 transition-all">
         
-        <!-- 头部：折叠箭头、标题、截止日期、删除 -->
+        <!-- 头部：折叠箭头、标题、截止日期输入框、删除 -->
         <div class="flex items-center gap-3 mb-3">
           <button @click="item.isCollapsed = !item.isCollapsed" class="text-slate-400 hover:text-slate-600 text-xs">
             <i class="fa-solid" :class="item.isCollapsed ? 'fa-chevron-right' : 'fa-chevron-down'"></i>
@@ -68,26 +74,35 @@
           
           <h2 class="text-base font-bold text-slate-800 flex-1">{{ item.title }}</h2>
 
-          <!-- 截止日期展示与选择区 -->
-          <div class="flex items-center gap-2">
-            <!-- 截止日期 Tag / 提醒 -->
-            <div v-if="item.deadline" 
-                 :class="[
-                   'flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition-all',
-                   isOverdue(item) 
-                    ? 'bg-rose-50 text-rose-600 border-rose-200 font-semibold' 
-                    : 'bg-slate-50 text-slate-500 border-slate-200'
+          <!-- 改进版：直接可点击的日期控件与状态 Badge -->
+          <div class="flex items-center gap-1.5">
+            
+            <!-- 倒计时/逾期 提醒胶囊 (仅当设置了日期且未完成时显示) -->
+            <span v-if="item.deadline && item.status !== 'done'" 
+                  :class="[
+                    'text-[11px] px-2 py-0.5 rounded-full font-medium transition-all',
+                    getDeadlineStatus(item.deadline).type === 'overdue' ? 'bg-rose-500 text-white font-bold' :
+                    getDeadlineStatus(item.deadline).type === 'warning' ? 'bg-amber-500 text-white font-bold' :
+                    'bg-slate-100 text-slate-500'
+                  ]">
+              {{ getDeadlineStatus(item.deadline).text }}
+            </span>
+
+            <!-- 可直接点击选日期的 Input 框 -->
+            <div :class="[
+                   'flex items-center gap-1 px-2 py-0.5 rounded-lg border text-xs transition-colors',
+                   getDeadlineStatus(item.deadline).type === 'overdue' && item.status !== 'done' ? 'border-rose-300 bg-rose-50/50' :
+                   getDeadlineStatus(item.deadline).type === 'warning' && item.status !== 'done' ? 'border-amber-300 bg-amber-50/50' :
+                   'border-slate-200 bg-slate-50/50'
                  ]">
-              <i class="fa-regular fa-calendar text-[11px]"></i>
-              <span>{{ item.deadline }}</span>
-              <span v-if="isOverdue(item)" class="bg-rose-500 text-white text-[10px] px-1 rounded font-normal">已逾期</span>
+              <i class="fa-regular fa-calendar text-slate-400 text-xs"></i>
+              <input type="date" v-model="item.deadline" class="bg-transparent text-slate-600 focus:outline-none cursor-pointer text-xs font-mono">
             </div>
 
-            <!-- 隐蔽的日期选择器触发器 -->
-            <label class="cursor-pointer text-slate-300 hover:text-amber-500 text-xs p-1" title="设置/修改截止日期">
-              <i class="fa-solid fa-calendar-day"></i>
-              <input type="date" v-model="item.deadline" class="sr-only">
-            </label>
+            <!-- 清除日期按钮 -->
+            <button v-if="item.deadline" @click="item.deadline = ''" class="text-slate-300 hover:text-slate-500 text-xs px-0.5" title="清除日期">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
           </div>
 
           <!-- 删除工作项按钮 -->
@@ -175,7 +190,7 @@
 
   </main>
 
-  <!-- 新建工作项弹窗（增加选择截止日期字段） -->
+  <!-- 新建工作项弹窗 -->
   <div v-if="showModal" class="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl space-y-4">
       <div class="flex justify-between items-center border-b border-slate-100 pb-3">
@@ -221,7 +236,7 @@
               {
                 id: Date.now(),
                 title: 'test',
-                deadline: '',
+                deadline: '2026-08-29',
                 status: 'in_progress',
                 isCollapsed: false,
                 newSubtaskTitle: '',
@@ -240,6 +255,30 @@
         watch(projects, (newVal) => {
           localStorage.setItem('worksync_data', JSON.stringify(newVal));
         }, { deep: true });
+
+        // 计算截止日期与倒计时状态
+        const getDeadlineStatus = (deadlineStr) => {
+          if (!deadlineStr) return { type: 'none', text: '' };
+          
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+
+          const target = new Date(deadlineStr);
+          target.setHours(0, 0, 0, 0);
+
+          const diffTime = target.getTime() - today.getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 3600 * 24));
+
+          if (diffDays < 0) {
+            return { type: 'overdue', text: `已逾期 ${Math.abs(diffDays)} 天` };
+          } else if (diffDays === 0) {
+            return { type: 'warning', text: '今天截止' };
+          } else if (diffDays <= 2) {
+            return { type: 'warning', text: `剩 ${diffDays} 天` };
+          } else {
+            return { type: 'normal', text: `剩 ${diffDays} 天` };
+          }
+        };
 
         // 三段式状态切换：todo -> doing -> done -> todo
         const toggleSubtaskStatus = (item, sub) => {
@@ -307,14 +346,6 @@
           autoBalanceWeights(item);
         };
 
-        // 判定是否过期
-        const isOverdue = (item) => {
-          if (!item.deadline || item.status === 'done') return false;
-          const today = new Date().setHours(0, 0, 0, 0);
-          const deadlineDate = new Date(item.deadline).setHours(0, 0, 0, 0);
-          return deadlineDate < today;
-        };
-
         const activeProjects = computed(() => projects.value.filter(p => p.status !== 'done'));
         const completedProjects = computed(() => projects.value.filter(p => p.status === 'done'));
         const currentList = computed(() => activeTab.value === 'active' ? activeProjects.value : completedProjects.value);
@@ -359,7 +390,7 @@
           onSubtaskChange,
           addNewSubtask,
           removeSubtask,
-          isOverdue
+          getDeadlineStatus
         };
       }
     }).mount('#app');
